@@ -44,24 +44,24 @@ namespace BluetoothBridge {
         // ================================================================
         //  VARIABLES GLOBALES
         // ================================================================
-        private static SerialPort weightsSensor;
-        private static SerialPort rotationSensor;
-        private static ClientWebSocket wsClient;
-        private static CancellationTokenSource cts;
+        private static SerialPort? weightsSensor;
+        private static SerialPort? rotationSensor;
+        private static ClientWebSocket? wsClient;
+        private static CancellationTokenSource cts = new();
 
         private static SensorDataBuffer weightData = new();
         private static SensorDataBuffer rotationData = new();
+        private static int debugCounter = 0;
 
         // ================================================================
         //  MAIN
         // ================================================================
         static async Task Main(string[] args) {
+            Console.OutputEncoding = Encoding.UTF8;
             Console.WriteLine("========================================");
             Console.WriteLine(" BLUETOOTH BRIDGE - VET SYSTEM");
             Console.WriteLine("========================================");
             Console.WriteLine("");
-
-            cts = new CancellationTokenSource();
 
             try {
                 // Inicializar conexiones
@@ -280,12 +280,17 @@ namespace BluetoothBridge {
         //  DEBUG
         // ================================================================
         static void PrintDebugInfo(FusedSensorData data) {
-            static int count = 0;
-
-            if (++count >= 10) {  // Imprimir cada 500ms
-                count = 0;
+            if (++debugCounter >= 10) {  // Imprimir cada 500ms
+                debugCounter = 0;
                 Console.Write($"[DATA] Pesos: LF={data.WeightDistributionLF:F2} RF={data.WeightDistributionRF:F2} | ");
-                Console.WriteLine($"Ángulos: R={data.Angles?.GetProperty("roll").GetDouble():F1}° P={data.Angles?.GetProperty("pitch").GetDouble():F1}°");
+                try {
+                    var roll = data.Angles?.GetProperty("roll").GetDouble() ?? 0.0;
+                    var pitch = data.Angles?.GetProperty("pitch").GetDouble() ?? 0.0;
+                    Console.WriteLine($"Ángulos: R={roll:F1}° P={pitch:F1}°");
+                }
+                catch {
+                    Console.WriteLine("");
+                }
             }
         }
 
@@ -349,13 +354,17 @@ namespace BluetoothBridge {
 
         public double GetValue(string key) {
             lock (lockObj) {
-                return data.ContainsKey(key) ? (double)data[key] : 0.0;
+                if (!data.ContainsKey(key)) return 0.0;
+                var value = data[key];
+                return value is double d ? d : 0.0;
             }
         }
 
         public JsonElement? GetObject(string key) {
             lock (lockObj) {
-                return data.ContainsKey(key) ? (JsonElement?)data[key] : null;
+                if (!data.ContainsKey(key)) return null;
+                var value = data[key];
+                return value is JsonElement je ? (JsonElement?)je : null;
             }
         }
     }
