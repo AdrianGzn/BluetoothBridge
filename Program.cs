@@ -47,11 +47,13 @@ namespace BluetoothBridge {
         private static SerialPort? weightsSensor;
         private static SerialPort? rotationSensor;
         private static ClientWebSocket? wsClient;
+        private static ClientWebSocket? wsCommandClient; // Para recibir comandos
         private static CancellationTokenSource cts = new();
 
         private static SensorDataBuffer weightData = new();
         private static SensorDataBuffer rotationData = new();
         private static int debugCounter = 0;
+        private static object commandLock = new();
 
         // ================================================================
         //  MAIN
@@ -68,13 +70,15 @@ namespace BluetoothBridge {
                 Console.WriteLine("[*] Inicializando conexiones...");
                 InitializeSerialPorts();
                 await InitializeWebSocket();
+                await InitializeCommandWebSocket();
 
-                // Iniciar tareas de lectura
+                // Iniciar tareas de lectura y envío
                 var weightsTask = ReadWeightsSensorAsync();
                 var rotationTask = ReadRotationSensorAsync();
                 var dataFusionTask = DataFusionLoopAsync();
+                var commandTask = ReceiveCommandsAsync();
 
-                await Task.WhenAll(weightsTask, rotationTask, dataFusionTask);
+                await Task.WhenAll(weightsTask, rotationTask, dataFusionTask, commandTask);
             }
             catch (Exception ex) {
                 Console.WriteLine($"[!] Error: {ex.Message}");
@@ -118,7 +122,7 @@ namespace BluetoothBridge {
         }
 
         // ================================================================
-        //  INICIALIZAR WEBSOCKET
+        //  INICIALIZAR WEBSOCKET (DATOS)
         // ================================================================
         static async Task InitializeWebSocket() {
             try {
@@ -131,6 +135,24 @@ namespace BluetoothBridge {
             catch (Exception ex) {
                 Console.WriteLine($"[!] Error conectando WebSocket: {ex.Message}");
                 wsClient = null;
+            }
+        }
+
+        // ================================================================
+        //  INICIALIZAR WEBSOCKET (COMANDOS)
+        // ================================================================
+        static async Task InitializeCommandWebSocket() {
+            try {
+                string wsCommandURL = "ws://localhost:8081/ws/commands";
+                Console.WriteLine($"[*] Conectando a WebSocket Comandos: {wsCommandURL}...");
+                wsCommandClient = new ClientWebSocket();
+                await wsCommandClient.ConnectAsync(new Uri(wsCommandURL), cts.Token);
+                Console.WriteLine("[✓] WebSocket Comandos conectado");
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[!] Error conectando WebSocket Comandos: {ex.Message}");
+                Console.WriteLine("    (Continuando sin conexión de comandos - modo solo lectura)");
+                wsCommandClient = null;
             }
         }
 
@@ -295,6 +317,59 @@ namespace BluetoothBridge {
         }
 
         // ================================================================
+        //  RECIBIR COMANDOS DEL WEBSOCKET
+        // ================================================================
+        static async Task ReceiveCommandsAsync() {
+            while (!cts.Token.IsCancellationRequested) {
+                try {
+                    if (wsCommandClient == null || wsCommandClient.State != WebSocketState.Open) {
+                        await Task.Delay(2000, cts.Token);
+                        continue;
+                    }
+
+                    byte[] buffer = new byte[4096];
+                    var result = await wsCommandClient.ReceiveAsync(
+                        new ArraySegment<byte>(buffer), cts.Token);
+
+                    if (result.MessageType == WebSocketMessageType.Text) {
+                        string json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                        Console.WriteLine($"[COMMAND] Comando recibido: {json}");
+                        SendCommandToESP(json);
+                    }
+
+                    await Task.Delay(10, cts.Token);
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"[!] Error recibiendo comandos: {ex.Message}");
+                    await Task.Delay(2000, cts.Token);
+                }
+            }
+        }
+
+        // ================================================================
+        //  ENVIAR COMANDO A ESP32
+        // ================================================================
+        static void SendCommandToESP(string jsonCommand) {
+            try {
+                lock (commandLock) {
+                    // Enviar a ambos ESP32
+                    if (weightsSensor != null && weightsSensor.IsOpen) {
+                        weightsSensor.WriteLine(jsonCommand);
+                        Console.WriteLine("[✓] Comando enviado a ESP32 #1 (Pesos)");
+                    }
+
+                    if (rotationSensor != null && rotationSensor.IsOpen) {
+                        rotationSensor.WriteLine(jsonCommand);
+                        Console.WriteLine("[✓] Comando enviado a ESP32 #2 (Rotación)");
+                    }
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[!] Error enviando comando a ESP: {ex.Message}");
+            }
+        }
+
+        // ================================================================
         //  LIMPIAR RECURSOS
         // ================================================================
         static void Cleanup() {
@@ -315,6 +390,13 @@ namespace BluetoothBridge {
                     wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None).Wait();
                 }
                 wsClient.Dispose();
+            }
+
+            if (wsCommandClient != null) {
+                if (wsCommandClient.State == WebSocketState.Open) {
+                    wsCommandClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None).Wait();
+                }
+                wsCommandClient.Dispose();
             }
 
             cts?.Dispose();
