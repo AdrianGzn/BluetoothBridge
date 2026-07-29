@@ -38,7 +38,8 @@ namespace BluetoothBridge {
         private const string COM_PORT_WEIGHTS = "COM4";      // Puerto Bluetooth ESP32 #1
         private const string COM_PORT_ROTATION = "COM5";     // Puerto Bluetooth ESP32 #2
         private const int BAUD_RATE = 115200;
-        private const string WS_URL = "ws://localhost:8081/ws/frontend";
+        private const string WS_DATA_URL = "ws://localhost:8081/ws/bluetooth";  // Para ENVIAR datos
+        private const string WS_COMMAND_URL = "ws://localhost:8081/ws/commands"; // Para RECIBIR comandos
         private const int RECONNECT_DELAY_MS = 5000;
 
         // ================================================================
@@ -126,14 +127,14 @@ namespace BluetoothBridge {
         // ================================================================
         static async Task InitializeWebSocket() {
             try {
-                Console.WriteLine($"[*] Conectando a WebSocket: {WS_URL}...");
+                Console.WriteLine($"[*] Conectando a WebSocket (DATOS): {WS_DATA_URL}...");
                 wsClient = new ClientWebSocket();
-                await wsClient.ConnectAsync(new Uri(WS_URL), cts.Token);
-                Console.WriteLine("[✓] WebSocket conectado");
+                await wsClient.ConnectAsync(new Uri(WS_DATA_URL), cts.Token);
+                Console.WriteLine("[✓] WebSocket DATOS conectado");
                 Console.WriteLine("");
             }
             catch (Exception ex) {
-                Console.WriteLine($"[!] Error conectando WebSocket: {ex.Message}");
+                Console.WriteLine($"[!] Error conectando WebSocket DATOS: {ex.Message}");
                 wsClient = null;
             }
         }
@@ -143,14 +144,13 @@ namespace BluetoothBridge {
         // ================================================================
         static async Task InitializeCommandWebSocket() {
             try {
-                string wsCommandURL = "ws://localhost:8081/ws/commands";
-                Console.WriteLine($"[*] Conectando a WebSocket Comandos: {wsCommandURL}...");
+                Console.WriteLine($"[*] Conectando a WebSocket (COMANDOS): {WS_COMMAND_URL}...");
                 wsCommandClient = new ClientWebSocket();
-                await wsCommandClient.ConnectAsync(new Uri(wsCommandURL), cts.Token);
-                Console.WriteLine("[✓] WebSocket Comandos conectado");
+                await wsCommandClient.ConnectAsync(new Uri(WS_COMMAND_URL), cts.Token);
+                Console.WriteLine("[✓] WebSocket COMANDOS conectado");
             }
             catch (Exception ex) {
-                Console.WriteLine($"[!] Error conectando WebSocket Comandos: {ex.Message}");
+                Console.WriteLine($"[!] Error conectando WebSocket COMANDOS: {ex.Message}");
                 Console.WriteLine("    (Continuando sin conexión de comandos - modo solo lectura)");
                 wsCommandClient = null;
             }
