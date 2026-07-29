@@ -270,7 +270,7 @@ namespace BluetoothBridge {
                         Temperature = rotationData.GetValue("temperature"),
 
                         // Metadatos
-                        Timestamp = DateTime.UtcNow
+                        Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                     };
                 }
             }
@@ -470,6 +470,6 @@ namespace BluetoothBridge {
         public double Temperature { get; set; }
 
         // Metadatos
-        public DateTime Timestamp { get; set; }
+        public long Timestamp { get; set; }
     }
 }
